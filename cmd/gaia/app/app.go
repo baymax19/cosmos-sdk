@@ -40,7 +40,8 @@ type GaiaApp struct {
 	*bam.BaseApp
 	cdc *codec.Codec
 
-	assertInvariantsBlockly bool
+	nextInvariantsCheck       uint
+	invariantsChecksFrequency uint
 
 	// keys to access the substores
 	keyMain          *sdk.KVStoreKey
@@ -70,7 +71,8 @@ type GaiaApp struct {
 }
 
 // NewGaiaApp returns a reference to an initialized GaiaApp.
-func NewGaiaApp(logger log.Logger, db dbm.DB, traceStore io.Writer, loadLatest, assertInvariantsBlockly bool,
+func NewGaiaApp(logger log.Logger, db dbm.DB, traceStore io.Writer, loadLatest bool,
+	invariantsChecksFrequency uint,
 	baseAppOptions ...func(*bam.BaseApp)) *GaiaApp {
 
 	cdc := MakeCodec()
@@ -79,20 +81,22 @@ func NewGaiaApp(logger log.Logger, db dbm.DB, traceStore io.Writer, loadLatest, 
 	bApp.SetCommitMultiStoreTracer(traceStore)
 
 	var app = &GaiaApp{
-		BaseApp:          bApp,
-		cdc:              cdc,
-		keyMain:          sdk.NewKVStoreKey(bam.MainStoreKey),
-		keyAccount:       sdk.NewKVStoreKey(auth.StoreKey),
-		keyStaking:       sdk.NewKVStoreKey(staking.StoreKey),
-		tkeyStaking:      sdk.NewTransientStoreKey(staking.TStoreKey),
-		keyMint:          sdk.NewKVStoreKey(mint.StoreKey),
-		keyDistr:         sdk.NewKVStoreKey(distr.StoreKey),
-		tkeyDistr:        sdk.NewTransientStoreKey(distr.TStoreKey),
-		keySlashing:      sdk.NewKVStoreKey(slashing.StoreKey),
-		keyGov:           sdk.NewKVStoreKey(gov.StoreKey),
-		keyFeeCollection: sdk.NewKVStoreKey(auth.FeeStoreKey),
-		keyParams:        sdk.NewKVStoreKey(params.StoreKey),
-		tkeyParams:       sdk.NewTransientStoreKey(params.TStoreKey),
+		BaseApp:                   bApp,
+		cdc:                       cdc,
+		invariantsChecksFrequency: invariantsChecksFrequency,
+		nextInvariantsCheck:       0,
+		keyMain:                   sdk.NewKVStoreKey(bam.MainStoreKey),
+		keyAccount:                sdk.NewKVStoreKey(auth.StoreKey),
+		keyStaking:                sdk.NewKVStoreKey(staking.StoreKey),
+		tkeyStaking:               sdk.NewTransientStoreKey(staking.TStoreKey),
+		keyMint:                   sdk.NewKVStoreKey(mint.StoreKey),
+		keyDistr:                  sdk.NewKVStoreKey(distr.StoreKey),
+		tkeyDistr:                 sdk.NewTransientStoreKey(distr.TStoreKey),
+		keySlashing:               sdk.NewKVStoreKey(slashing.StoreKey),
+		keyGov:                    sdk.NewKVStoreKey(gov.StoreKey),
+		keyFeeCollection:          sdk.NewKVStoreKey(auth.FeeStoreKey),
+		keyParams:                 sdk.NewKVStoreKey(params.StoreKey),
+		tkeyParams:                sdk.NewTransientStoreKey(params.TStoreKey),
 	}
 
 	app.paramsKeeper = params.NewKeeper(app.cdc, app.keyParams, app.tkeyParams)
@@ -242,8 +246,11 @@ func (app *GaiaApp) EndBlocker(ctx sdk.Context, req abci.RequestEndBlock) abci.R
 	validatorUpdates, endBlockerTags := staking.EndBlocker(ctx, app.stakingKeeper)
 	tags = append(tags, endBlockerTags...)
 
-	if app.assertInvariantsBlockly {
-		app.assertRuntimeInvariants()
+	if app.invariantsChecksFrequency > 0 {
+		if ctx.BlockHeight() == int64(app.nextInvariantsCheck) || app.nextInvariantsCheck == 0 {
+			app.assertRuntimeInvariants()
+			app.nextInvariantsCheck = uint(ctx.BlockHeight()) + app.invariantsChecksFrequency
+		}
 	}
 
 	return abci.ResponseEndBlock{

@@ -2,7 +2,7 @@ package clientpackage
 
 import (
 	"github.com/spf13/cobra"
-	"github.com/tendermint/go-amino"
+	amino "github.com/tendermint/go-amino"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/x/mint"
